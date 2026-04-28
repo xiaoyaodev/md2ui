@@ -1,0 +1,36 @@
+# 依赖目录
+node_modules
+npm-debug.log*
+pnpm-debug.log*
+
+# 构建输出
+dist
+.vite
+
+# 开发工具
+.vscode
+.idea
+
+# Git 相关
+.git
+.gitignore
+
+# 环境文件
+.env
+.env.local
+.env.*.local
+
+# 日志文件
+*.log
+
+# 临时文件
+.DS_Store
+Thumbs.db
+
+# 测试覆盖率
+coverage
+
+# 其他
+README.md
+Dockerfile
+.dockerignore

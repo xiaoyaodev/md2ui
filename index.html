@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="/logo.svg">
+  <title>md2ui - Markdown 文档渲染系统</title>
+  <meta name="description" content="将本地 Markdown 文档转换为美观的 HTML 页面">
+  <!-- 内联骨架屏样式，防止白屏闪烁 -->
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; background: #ffffff; }
+    .app-skeleton {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    .skeleton-topbar {
+      height: 49px;
+      background: #f6f8fa;
+      border-bottom: 1px solid #d0d7de;
+      flex-shrink: 0;
+    }
+    .skeleton-body {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+    .skeleton-sidebar {
+      width: 260px;
+      background: #f6f8fa;
+      border-right: 1px solid #d0d7de;
+      flex-shrink: 0;
+    }
+    .skeleton-content {
+      flex: 1;
+    }
+    @media (max-width: 768px) {
+      .skeleton-sidebar { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 骨架屏：Vue 挂载后自动替换 -->
+    <div class="app-skeleton">
+      <div class="skeleton-topbar"></div>
+      <div class="skeleton-body">
+        <div class="skeleton-sidebar"></div>
+        <div class="skeleton-content"></div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

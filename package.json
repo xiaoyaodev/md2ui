@@ -1,0 +1,64 @@
+{
+  "name": "md2ui",
+  "version": "1.0.19",
+  "type": "module",
+  "description": "将本地 Markdown 文档转换为美观的 HTML 页面",
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xiaoyaodev/md2ui"
+  },
+  "keywords": [
+    "markdown",
+    "documentation",
+    "viewer",
+    "mermaid",
+    "vue"
+  ],
+  "bin": {
+    "md2ui": "./bin/md2ui.js"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "files": [
+    "bin",
+    "src",
+    "public",
+    "index.html",
+    "vite.config.js",
+    "vite-plugin-doc-api.js"
+  ],
+  "dependencies": {
+    "@tiptap/extension-code-block-lowlight": "^3.22.3",
+    "@tiptap/extension-image": "^3.22.3",
+    "@tiptap/extension-placeholder": "^3.22.3",
+    "@tiptap/extension-table": "^3.22.3",
+    "@tiptap/extension-table-cell": "^3.22.3",
+    "@tiptap/extension-table-header": "^3.22.3",
+    "@tiptap/extension-table-row": "^3.22.3",
+    "@tiptap/extension-task-item": "^3.22.3",
+    "@tiptap/extension-task-list": "^3.22.3",
+    "@tiptap/extension-underline": "^3.22.3",
+    "@tiptap/pm": "^3.22.4",
+    "@tiptap/starter-kit": "^3.22.3",
+    "@tiptap/vue-3": "^3.22.3",
+    "@vitejs/plugin-vue": "^5.0.0",
+    "docx": "^9.6.1",
+    "github-slugger": "^2.0.0",
+    "highlight.js": "^11.11.1",
+    "highlightjs-line-numbers.js": "^2.9.1",
+    "katex": "^0.16.45",
+    "lucide-vue-next": "^0.556.0",
+    "marked": "^11.1.1",
+    "mermaid": "^10.6.1",
+    "minisearch": "^7.2.0",
+    "tiptap-markdown": "^0.9.0",
+    "vite": "^5.0.0",
+    "vue": "^3.4.0",
+    "vuedraggable": "^4.1.0"
+  }
+}
