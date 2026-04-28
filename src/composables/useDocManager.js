@@ -55,6 +55,22 @@ export function useDocManager() {
     return { scrollTop: scrollTop ?? getScrollTop() }
   }
 
+  // 滚动时同步 URL 锚点（节流，避免频繁 replaceState）
+  let _hashUpdateTimer = null
+  watch(activeHeading, (id) => {
+    // 忽略清空（文档切换时 activeHeading 被置空，不应清除 URL hash）
+    if (!id || !currentDoc.value) return
+    if (_hashUpdateTimer) clearTimeout(_hashUpdateTimer)
+    _hashUpdateTimer = setTimeout(() => {
+      _hashUpdateTimer = null
+      const base = `/${docHash(currentDoc.value)}`
+      const url = `${base}#${id}`
+      if (window.location.pathname + window.location.hash !== url) {
+        history.replaceState(makeState(), '', url)
+      }
+    }, 150)
+  })
+
   function handleScroll(e) {
     _handleScroll(e)
   }
@@ -129,6 +145,8 @@ export function useDocManager() {
           await renderMarkdown(content, key, docsList.value)
         }
         // 切换文档时清空 activeHeading，避免残留旧文档的高亮状态
+        // 同时取消 pending 的 hash 同步 timer，防止旧文档的 hash 覆盖新 URL
+        if (_hashUpdateTimer) { clearTimeout(_hashUpdateTimer); _hashUpdateTimer = null }
         activeHeading.value = ''
         const contentEl = document.querySelector('.content')
         if (contentEl) contentEl.scrollTop = 0

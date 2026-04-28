@@ -11,6 +11,9 @@ let _tocItemsRef = null
 // 节流定时器，避免滚动时频繁查询 DOM
 let _activeHeadingTimer = null
 
+// 点击目录项后短暂锁定，防止滚动检测覆盖 activeHeading 导致闪动
+let _lockUntil = 0
+
 export function useScroll() {
 
   // 注入 tocItems 引用（由 useDocManager 调用一次）
@@ -53,6 +56,9 @@ export function useScroll() {
 
   // 更新当前激活的标题
   function updateActiveHeading() {
+    // 点击目录项后的锁定期内跳过，避免闪动
+    if (Date.now() < _lockUntil) return
+
     const content = document.querySelector('.content')
     if (!content) return
 
@@ -76,6 +82,8 @@ export function useScroll() {
   // 滚动到指定标题
   function scrollToHeading(id) {
     activeHeading.value = id
+    // 锁定 800ms，覆盖 smooth 滚动期间的检测
+    _lockUntil = Date.now() + 800
 
     let el = document.getElementById(id)
     if (el) {
