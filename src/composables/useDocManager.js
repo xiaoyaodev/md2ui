@@ -39,7 +39,10 @@ export function useDocManager() {
     handleScroll: _handleScroll,
     scrollToHeading: _scrollToHeading,
     scrollToTop,
-    setTocItems
+    setTocItems,
+    onActiveHeadingChange,
+    pauseUrlUpdate,
+    resumeUrlUpdate
   } = useScroll()
   const { isMobile, mobileDrawerOpen } = useMobile()
 
@@ -55,11 +58,15 @@ export function useDocManager() {
     return { scrollTop: scrollTop ?? getScrollTop() }
   }
 
+  // 注入 URL 更新回调：滚动停止后由 useScroll 的 debounce 触发
+  onActiveHeadingChange((id) => {
+    if (id && currentDoc.value) {
+      history.replaceState(makeState(), '', `/${docHash(currentDoc.value)}#${id}`)
+    }
+  })
+
   function handleScroll(e) {
     _handleScroll(e)
-    if (activeHeading.value && currentDoc.value) {
-      history.replaceState(makeState(), '', `/${docHash(currentDoc.value)}#${activeHeading.value}`)
-    }
   }
 
   function scrollToHeading(id, { push = false } = {}) {
@@ -131,8 +138,14 @@ export function useDocManager() {
         } else {
           await renderMarkdown(content, key, docsList.value)
         }
+        // 切换文档时先清空 activeHeading 并暂停 URL debounce，
+        // 避免 scrollTop=0 触发的 scroll 事件把新文档第一个标题写入 URL
+        activeHeading.value = ''
+        pauseUrlUpdate()
         const contentEl = document.querySelector('.content')
         if (contentEl) contentEl.scrollTop = 0
+        // 下一帧恢复，让 loadFromUrl 中的锚点定位正常工作
+        nextTick(() => resumeUrlUpdate())
         // 动态更新页面标题（SEO + 浏览器标签页）
         const docTitle = findDoc(docsList.value, key)?.label || ''
         document.title = docTitle ? `${docTitle} - md2ui` : 'md2ui'
@@ -239,18 +252,19 @@ export function useDocManager() {
     return doc?.label || '文档'
   })
 
+  // 扁平化文档列表（缓存，供 prevDoc / nextDoc 共享）
+  const flatList = computed(() => flattenDocsList(docsList.value))
+
   const prevDoc = computed(() => {
     if (!currentDoc.value) return null
-    const flat = flattenDocsList(docsList.value)
-    const idx = flat.findIndex(d => d.key === currentDoc.value)
-    return idx > 0 ? flat[idx - 1] : null
+    const idx = flatList.value.findIndex(d => d.key === currentDoc.value)
+    return idx > 0 ? flatList.value[idx - 1] : null
   })
 
   const nextDoc = computed(() => {
     if (!currentDoc.value) return null
-    const flat = flattenDocsList(docsList.value)
-    const idx = flat.findIndex(d => d.key === currentDoc.value)
-    return idx >= 0 && idx < flat.length - 1 ? flat[idx + 1] : null
+    const idx = flatList.value.findIndex(d => d.key === currentDoc.value)
+    return idx >= 0 && idx < flatList.value.length - 1 ? flatList.value[idx + 1] : null
   })
 
   function handleSearchSelect(key) {

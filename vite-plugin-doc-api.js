@@ -24,6 +24,29 @@ export default function docApiPlugin(docsDir = '.') {
     return '"' + crypto.createHash('md5').update(content).digest('hex') + '"'
   }
 
+  // 安全路径验证：使用 path.relative 防止路径遍历
+  function safePath(filePath) {
+    const fullPath = path.resolve(resolvedDocsDir, filePath)
+    const relative = path.relative(resolvedDocsDir, fullPath)
+    if (relative.startsWith('..') || path.isAbsolute(relative)) {
+      return null // 路径越界
+    }
+    return fullPath
+  }
+
+  // 解析 POST 请求的 JSON body
+  function parseJsonBody(req) {
+    return new Promise((resolve, reject) => {
+      let body = ''
+      req.on('data', chunk => { body += chunk })
+      req.on('end', () => {
+        try { resolve(JSON.parse(body)) }
+        catch (e) { reject(e) }
+      })
+      req.on('error', reject)
+    })
+  }
+
   // 递归扫描 .md 文件，返回树结构（与 CLI 模式 scanDocs 一致）
   function scanDocs(dir, basePath = '', level = 0) {
     const items = []
@@ -101,8 +124,8 @@ export default function docApiPlugin(docsDir = '.') {
 
         // GET /@user-docs/xxx — 返回文件内容（md / 图片等）
         if (req.url?.startsWith('/@user-docs/') && req.method === 'GET') {
-          const filePath = path.resolve(resolvedDocsDir, decodeURIComponent(req.url.replace('/@user-docs/', '')))
-          if (!filePath.startsWith(resolvedDocsDir)) {
+          const filePath = safePath(decodeURIComponent(req.url.replace('/@user-docs/', '')))
+          if (!filePath) {
             res.statusCode = 403; res.end('禁止访问'); return
           }
           if (!fs.existsSync(filePath)) {
@@ -144,7 +167,8 @@ export default function docApiPlugin(docsDir = '.') {
               }
 
               const docDir = path.dirname(path.resolve(resolvedDocsDir, docPath))
-              if (!docDir.startsWith(resolvedDocsDir)) {
+              const relative = path.relative(resolvedDocsDir, docDir)
+              if (relative.startsWith('..') || path.isAbsolute(relative)) {
                 res.statusCode = 403; res.end('禁止访问'); return
               }
 
@@ -180,188 +204,165 @@ export default function docApiPlugin(docsDir = '.') {
       })
 
       // POST /api/create — 创建文件或文件夹
-      server.middlewares.use('/api/create', (req, res) => {
+      server.middlewares.use('/api/create', async (req, res) => {
         if (req.method !== 'POST') { res.statusCode = 405; res.end(); return }
-        let body = ''
-        req.on('data', chunk => { body += chunk })
-        req.on('end', () => {
-          try {
-            const { path: filePath, type } = JSON.parse(body)
-            if (!filePath) {
-              res.statusCode = 400; res.end('缺少 path'); return
-            }
-            const fullPath = path.resolve(resolvedDocsDir, filePath)
-            if (!fullPath.startsWith(resolvedDocsDir)) {
-              res.statusCode = 403; res.end('禁止访问'); return
-            }
-            if (fs.existsSync(fullPath)) {
-              res.statusCode = 409; res.end('已存在同名文件或文件夹'); return
-            }
-            if (type === 'folder') {
-              fs.mkdirSync(fullPath, { recursive: true })
-            } else {
-              fs.mkdirSync(path.dirname(fullPath), { recursive: true })
-              fs.writeFileSync(fullPath, '', 'utf-8')
-            }
-            res.setHeader('Content-Type', 'application/json')
-            res.end(JSON.stringify({ ok: true }))
-          } catch (e) {
-            res.statusCode = 500; res.end(e.message)
+        try {
+          const { path: filePath, type } = await parseJsonBody(req)
+          if (!filePath) {
+            res.statusCode = 400; res.end('缺少 path'); return
           }
-        })
+          const fullPath = safePath(filePath)
+          if (!fullPath) {
+            res.statusCode = 403; res.end('禁止访问'); return
+          }
+          if (fs.existsSync(fullPath)) {
+            res.statusCode = 409; res.end('已存在同名文件或文件夹'); return
+          }
+          if (type === 'folder') {
+            fs.mkdirSync(fullPath, { recursive: true })
+          } else {
+            fs.mkdirSync(path.dirname(fullPath), { recursive: true })
+            fs.writeFileSync(fullPath, '', 'utf-8')
+          }
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ ok: true }))
+        } catch (e) {
+          res.statusCode = 500; res.end(e.message)
+        }
       })
 
       // POST /api/delete — 删除文件或文件夹
-      server.middlewares.use('/api/delete', (req, res) => {
+      server.middlewares.use('/api/delete', async (req, res) => {
         if (req.method !== 'POST') { res.statusCode = 405; res.end(); return }
-        let body = ''
-        req.on('data', chunk => { body += chunk })
-        req.on('end', () => {
-          try {
-            const { path: filePath } = JSON.parse(body)
-            if (!filePath) {
-              res.statusCode = 400; res.end('缺少 path'); return
-            }
-            const fullPath = path.resolve(resolvedDocsDir, filePath)
-            if (!fullPath.startsWith(resolvedDocsDir)) {
-              res.statusCode = 403; res.end('禁止访问'); return
-            }
-            if (!fs.existsSync(fullPath)) {
-              res.statusCode = 404; res.end('文件不存在'); return
-            }
-            fs.rmSync(fullPath, { recursive: true, force: true })
-            res.setHeader('Content-Type', 'application/json')
-            res.end(JSON.stringify({ ok: true }))
-          } catch (e) {
-            res.statusCode = 500; res.end(e.message)
+        try {
+          const { path: filePath } = await parseJsonBody(req)
+          if (!filePath) {
+            res.statusCode = 400; res.end('缺少 path'); return
           }
-        })
+          const fullPath = safePath(filePath)
+          if (!fullPath) {
+            res.statusCode = 403; res.end('禁止访问'); return
+          }
+          if (!fs.existsSync(fullPath)) {
+            res.statusCode = 404; res.end('文件不存在'); return
+          }
+          fs.rmSync(fullPath, { recursive: true, force: true })
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ ok: true }))
+        } catch (e) {
+          res.statusCode = 500; res.end(e.message)
+        }
       })
 
       // POST /api/rename — 重命名文件或文件夹
-      server.middlewares.use('/api/rename', (req, res) => {
+      server.middlewares.use('/api/rename', async (req, res) => {
         if (req.method !== 'POST') { res.statusCode = 405; res.end(); return }
-        let body = ''
-        req.on('data', chunk => { body += chunk })
-        req.on('end', () => {
-          try {
-            const { oldPath, newPath } = JSON.parse(body)
-            if (!oldPath || !newPath) {
-              res.statusCode = 400; res.end('缺少 oldPath 或 newPath'); return
-            }
-            const fullOld = path.resolve(resolvedDocsDir, oldPath)
-            const fullNew = path.resolve(resolvedDocsDir, newPath)
-            if (!fullOld.startsWith(resolvedDocsDir) || !fullNew.startsWith(resolvedDocsDir)) {
-              res.statusCode = 403; res.end('禁止访问'); return
-            }
-            if (!fs.existsSync(fullOld)) {
-              res.statusCode = 404; res.end('源文件不存在'); return
-            }
-            if (fs.existsSync(fullNew)) {
-              res.statusCode = 409; res.end('目标名称已存在'); return
-            }
-            fs.mkdirSync(path.dirname(fullNew), { recursive: true })
-            fs.renameSync(fullOld, fullNew)
-            res.setHeader('Content-Type', 'application/json')
-            res.end(JSON.stringify({ ok: true }))
-          } catch (e) {
-            res.statusCode = 500; res.end(e.message)
+        try {
+          const { oldPath, newPath } = await parseJsonBody(req)
+          if (!oldPath || !newPath) {
+            res.statusCode = 400; res.end('缺少 oldPath 或 newPath'); return
           }
-        })
+          const fullOld = safePath(oldPath)
+          const fullNew = safePath(newPath)
+          if (!fullOld || !fullNew) {
+            res.statusCode = 403; res.end('禁止访问'); return
+          }
+          if (!fs.existsSync(fullOld)) {
+            res.statusCode = 404; res.end('源文件不存在'); return
+          }
+          if (fs.existsSync(fullNew)) {
+            res.statusCode = 409; res.end('目标名称已存在'); return
+          }
+          fs.mkdirSync(path.dirname(fullNew), { recursive: true })
+          fs.renameSync(fullOld, fullNew)
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ ok: true }))
+        } catch (e) {
+          res.statusCode = 500; res.end(e.message)
+        }
       })
 
       // POST /api/reorder — 批量重编号
-      server.middlewares.use('/api/reorder', (req, res) => {
+      server.middlewares.use('/api/reorder', async (req, res) => {
         if (req.method !== 'POST') { res.statusCode = 405; res.end(); return }
-        let body = ''
-        req.on('data', chunk => { body += chunk })
-        req.on('end', () => {
-          try {
-            const { items } = JSON.parse(body)
-            if (!Array.isArray(items) || items.length === 0) {
-              res.statusCode = 400; res.end('缺少 items'); return
-            }
-            for (const { oldPath, newPath } of items) {
-              const fullOld = path.resolve(resolvedDocsDir, oldPath)
-              const fullNew = path.resolve(resolvedDocsDir, newPath)
-              if (!fullOld.startsWith(resolvedDocsDir) || !fullNew.startsWith(resolvedDocsDir)) {
-                res.statusCode = 403; res.end('禁止访问'); return
-              }
-            }
-            const tempMap = []
-            for (let i = 0; i < items.length; i++) {
-              const { oldPath } = items[i]
-              const fullOld = path.resolve(resolvedDocsDir, oldPath)
-              if (!fs.existsSync(fullOld)) continue
-              const tempName = fullOld + `.__reorder_tmp_${i}__`
-              fs.renameSync(fullOld, tempName)
-              tempMap.push({ temp: tempName, newPath: items[i].newPath })
-            }
-            for (const { temp, newPath: np } of tempMap) {
-              const fullNew = path.resolve(resolvedDocsDir, np)
-              fs.mkdirSync(path.dirname(fullNew), { recursive: true })
-              fs.renameSync(temp, fullNew)
-            }
-            res.setHeader('Content-Type', 'application/json')
-            res.end(JSON.stringify({ ok: true }))
-          } catch (e) {
-            res.statusCode = 500; res.end(e.message)
+        try {
+          const { items } = await parseJsonBody(req)
+          if (!Array.isArray(items) || items.length === 0) {
+            res.statusCode = 400; res.end('缺少 items'); return
           }
-        })
+          // 验证所有路径
+          for (const { oldPath, newPath } of items) {
+            if (!safePath(oldPath) || !safePath(newPath)) {
+              res.statusCode = 403; res.end('禁止访问'); return
+            }
+          }
+          // 先全部重命名为临时文件，再重命名为目标文件（避免冲突）
+          const tempMap = []
+          for (let i = 0; i < items.length; i++) {
+            const { oldPath } = items[i]
+            const fullOld = safePath(oldPath)
+            if (!fullOld || !fs.existsSync(fullOld)) continue
+            const tempName = fullOld + `.__reorder_tmp_${i}__`
+            fs.renameSync(fullOld, tempName)
+            tempMap.push({ temp: tempName, newPath: items[i].newPath })
+          }
+          for (const { temp, newPath: np } of tempMap) {
+            const fullNew = safePath(np)
+            if (!fullNew) continue
+            fs.mkdirSync(path.dirname(fullNew), { recursive: true })
+            fs.renameSync(temp, fullNew)
+          }
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ ok: true }))
+        } catch (e) {
+          res.statusCode = 500; res.end(e.message)
+        }
       })
 
       // POST /api/move — 移动文件/文件夹
-      server.middlewares.use('/api/move', (req, res) => {
+      server.middlewares.use('/api/move', async (req, res) => {
         if (req.method !== 'POST') { res.statusCode = 405; res.end(); return }
-        let body = ''
-        req.on('data', chunk => { body += chunk })
-        req.on('end', () => {
-          try {
-            const { oldPath, newPath } = JSON.parse(body)
-            if (!oldPath || !newPath) {
-              res.statusCode = 400; res.end('缺少 oldPath 或 newPath'); return
-            }
-            const fullOld = path.resolve(resolvedDocsDir, oldPath)
-            const fullNew = path.resolve(resolvedDocsDir, newPath)
-            if (!fullOld.startsWith(resolvedDocsDir) || !fullNew.startsWith(resolvedDocsDir)) {
-              res.statusCode = 403; res.end('禁止访问'); return
-            }
-            if (!fs.existsSync(fullOld)) {
-              res.statusCode = 404; res.end('源文件不存在'); return
-            }
-            fs.mkdirSync(path.dirname(fullNew), { recursive: true })
-            fs.renameSync(fullOld, fullNew)
-            res.setHeader('Content-Type', 'application/json')
-            res.end(JSON.stringify({ ok: true }))
-          } catch (e) {
-            res.statusCode = 500; res.end(e.message)
+        try {
+          const { oldPath, newPath } = await parseJsonBody(req)
+          if (!oldPath || !newPath) {
+            res.statusCode = 400; res.end('缺少 oldPath 或 newPath'); return
           }
-        })
+          const fullOld = safePath(oldPath)
+          const fullNew = safePath(newPath)
+          if (!fullOld || !fullNew) {
+            res.statusCode = 403; res.end('禁止访问'); return
+          }
+          if (!fs.existsSync(fullOld)) {
+            res.statusCode = 404; res.end('源文件不存在'); return
+          }
+          fs.mkdirSync(path.dirname(fullNew), { recursive: true })
+          fs.renameSync(fullOld, fullNew)
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ ok: true }))
+        } catch (e) {
+          res.statusCode = 500; res.end(e.message)
+        }
       })
 
       // POST /api/save — 保存文件内容
-      server.middlewares.use('/api/save', (req, res) => {
+      server.middlewares.use('/api/save', async (req, res) => {
         if (req.method !== 'POST') { res.statusCode = 405; res.end(); return }
-        let body = ''
-        req.on('data', chunk => { body += chunk })
-        req.on('end', () => {
-          try {
-            const { path: filePath, content } = JSON.parse(body)
-            if (!filePath || content == null) {
-              res.statusCode = 400; res.end('缺少 path 或 content'); return
-            }
-            const fullPath = path.resolve(resolvedDocsDir, filePath)
-            if (!fullPath.startsWith(resolvedDocsDir)) {
-              res.statusCode = 403; res.end('禁止访问'); return
-            }
-            fs.mkdirSync(path.dirname(fullPath), { recursive: true })
-            fs.writeFileSync(fullPath, content, 'utf-8')
-            res.setHeader('Content-Type', 'application/json')
-            res.end(JSON.stringify({ ok: true }))
-          } catch (e) {
-            res.statusCode = 500; res.end(e.message)
+        try {
+          const { path: filePath, content } = await parseJsonBody(req)
+          if (!filePath || content == null) {
+            res.statusCode = 400; res.end('缺少 path 或 content'); return
           }
-        })
+          const fullPath = safePath(filePath)
+          if (!fullPath) {
+            res.statusCode = 403; res.end('禁止访问'); return
+          }
+          fs.mkdirSync(path.dirname(fullPath), { recursive: true })
+          fs.writeFileSync(fullPath, content, 'utf-8')
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ ok: true }))
+        } catch (e) {
+          res.statusCode = 500; res.end(e.message)
+        }
       })
     }
   }

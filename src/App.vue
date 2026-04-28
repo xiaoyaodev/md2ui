@@ -110,7 +110,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { ArrowUp, ChevronRight, ChevronLeft } from 'lucide-vue-next'
 import MobileHeader from './components/MobileHeader.vue'
 import TopBar from './components/TopBar.vue'
@@ -133,7 +133,6 @@ import { useMobile } from './composables/useMobile.js'
 const sidebarCollapsed = ref(sessionStorage.getItem('sidebarCollapsed') === 'true')
 const tocCollapsed = ref(sessionStorage.getItem('tocCollapsed') === 'true')
 const zoomVisible = ref(false)
-const zoomContent = ref('')
 const zoomImages = ref([])
 const zoomIndex = ref(0)
 
@@ -256,15 +255,20 @@ function onContentClick(event) {
   })
 }
 
-// 全局快捷键
-window.addEventListener('popstate', () => loadFromUrl())
+// popstate 事件监听（生命周期管理）
+function onPopstate() { loadFromUrl() }
 
 // 持久化 UI 状态
 watch(sidebarCollapsed, (v) => sessionStorage.setItem('sidebarCollapsed', v))
 watch(tocCollapsed, (v) => sessionStorage.setItem('tocCollapsed', v))
 
 onMounted(async () => {
+  window.addEventListener('popstate', onPopstate)
   await loadDocsList()
   await loadFromUrl()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('popstate', onPopstate)
 })
 </script>

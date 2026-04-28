@@ -76,9 +76,6 @@ export async function pollDocContent(docPath) {
     if (res.status === 304) return null
     if (res.status === 200) {
       _contentEtag = res.headers.get('etag')
-      // 捕获最后修改时间
-      const lm = res.headers.get('x-last-modified')
-      if (lm) _lastModified = lm
       return await res.text()
     }
   } catch { /* 静默忽略 */ }
@@ -94,19 +91,6 @@ export function resetContentEtag() {
 /** 重置列表 ETag（强制下次拉取最新） */
 export function resetListEtag() {
   _listEtag = null
-}
-
-// ===== 文档最后修改时间 =====
-let _lastModified = null
-
-/** 获取当前文档的最后修改时间 */
-export function getLastModified() {
-  return _lastModified
-}
-
-/** 重置最后修改时间 */
-export function resetLastModified() {
-  _lastModified = null
 }
 
 // ===== 写操作 API =====
