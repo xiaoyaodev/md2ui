@@ -39,10 +39,7 @@ export function useDocManager() {
     handleScroll: _handleScroll,
     scrollToHeading: _scrollToHeading,
     scrollToTop,
-    setTocItems,
-    onActiveHeadingChange,
-    pauseUrlUpdate,
-    resumeUrlUpdate
+    setTocItems
   } = useScroll()
   const { isMobile, mobileDrawerOpen } = useMobile()
 
@@ -57,13 +54,6 @@ export function useDocManager() {
   function makeState(scrollTop) {
     return { scrollTop: scrollTop ?? getScrollTop() }
   }
-
-  // 注入 URL 更新回调：滚动停止后由 useScroll 的 debounce 触发
-  onActiveHeadingChange((id) => {
-    if (id && currentDoc.value) {
-      history.replaceState(makeState(), '', `/${docHash(currentDoc.value)}#${id}`)
-    }
-  })
 
   function handleScroll(e) {
     _handleScroll(e)
@@ -138,14 +128,10 @@ export function useDocManager() {
         } else {
           await renderMarkdown(content, key, docsList.value)
         }
-        // 切换文档时先清空 activeHeading 并暂停 URL debounce，
-        // 避免 scrollTop=0 触发的 scroll 事件把新文档第一个标题写入 URL
+        // 切换文档时清空 activeHeading，避免残留旧文档的高亮状态
         activeHeading.value = ''
-        pauseUrlUpdate()
         const contentEl = document.querySelector('.content')
         if (contentEl) contentEl.scrollTop = 0
-        // 下一帧恢复，让 loadFromUrl 中的锚点定位正常工作
-        nextTick(() => resumeUrlUpdate())
         // 动态更新页面标题（SEO + 浏览器标签页）
         const docTitle = findDoc(docsList.value, key)?.label || ''
         document.title = docTitle ? `${docTitle} - md2ui` : 'md2ui'
