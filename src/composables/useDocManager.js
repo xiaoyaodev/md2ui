@@ -418,7 +418,11 @@ export function useDocManager() {
       const contentEl = document.querySelector('.content')
       if (contentEl) contentEl.scrollTo({ top: savedScroll })
     } else if (anchor) {
-      await nextTick(); await waitForContentImages(); _scrollToHeading(decodeURIComponent(anchor))
+      const decodedAnchor = decodeURIComponent(anchor)
+      await nextTick(); await waitForContentImages()
+      // 初始化加载用 instant 滚动，确保 updateActiveHeading 能立即检测到正确标题
+      const el = document.getElementById(decodedAnchor)
+      if (el) el.scrollIntoView({ behavior: 'instant', block: 'start' })
     }
   }
 
