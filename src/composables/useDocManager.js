@@ -39,7 +39,11 @@ export function useDocManager() {
     handleScroll: _handleScroll,
     scrollToHeading: _scrollToHeading,
     scrollToTop,
-    setTocItems
+    setTocItems,
+    rebuildHeadingsCache,
+    clearActiveHeading,
+    isSuppressHashClear,
+    lockHeading
   } = useScroll()
   const { isMobile, mobileDrawerOpen } = useMobile()
 
@@ -55,20 +59,37 @@ export function useDocManager() {
     return { scrollTop: scrollTop ?? getScrollTop() }
   }
 
-  // 滚动时同步 URL 锚点（节流，避免频繁 replaceState）
+  // URL 锚点同步：统一由 watch 驱动，scrollToHeading 不再直接操作 URL
+  // _pendingPush: 标记下一次 activeHeading 变化是否需要 pushState（点击目录项）
+  let _pendingPush = false
   let _hashUpdateTimer = null
-  watch(activeHeading, (id) => {
-    // 忽略清空（文档切换时 activeHeading 被置空，不应清除 URL hash）
-    if (!id || !currentDoc.value) return
+
+  watch(activeHeading, (id, oldId) => {
+    if (!currentDoc.value) return
+
+    // 文档切换导致的清空，不动 URL
+    if (!id && isSuppressHashClear()) return
+
+    // 取出并重置 push 标记
+    const shouldPush = _pendingPush
+    _pendingPush = false
+
     if (_hashUpdateTimer) clearTimeout(_hashUpdateTimer)
     _hashUpdateTimer = setTimeout(() => {
       _hashUpdateTimer = null
       const base = `/${docHash(currentDoc.value)}`
-      const url = `${base}#${id}`
-      if (window.location.pathname + window.location.hash !== url) {
+      const url = id ? `${base}#${id}` : base
+      const current = window.location.pathname + window.location.hash
+      if (current === url) return
+
+      if (shouldPush) {
+        // 先保存当前滚动位置到旧条目
+        history.replaceState(makeState(), '', current)
+        history.pushState(makeState(), '', url)
+      } else {
         history.replaceState(makeState(), '', url)
       }
-    }, 150)
+    }, 100)
   })
 
   function handleScroll(e) {
@@ -76,18 +97,8 @@ export function useDocManager() {
   }
 
   function scrollToHeading(id, { push = false } = {}) {
-    if (push && currentDoc.value) {
-      history.replaceState(makeState(), '', window.location.href)
-    }
+    if (push) _pendingPush = true
     _scrollToHeading(id)
-    if (currentDoc.value) {
-      const url = `/${docHash(currentDoc.value)}#${id}`
-      if (push) {
-        history.pushState(makeState(), '', url)
-      } else {
-        history.replaceState(makeState(), '', url)
-      }
-    }
   }
 
   // ===== 文档列表加载 =====
@@ -144,10 +155,17 @@ export function useDocManager() {
         } else {
           await renderMarkdown(content, key, docsList.value)
         }
-        // 切换文档时清空 activeHeading，避免残留旧文档的高亮状态
-        // 同时取消 pending 的 hash 同步 timer，防止旧文档的 hash 覆盖新 URL
+        // 渲染完成后重建标题缓存
+        rebuildHeadingsCache()
+        // 切换文档时清空 activeHeading（标记为文档切换，不清 URL hash）
+        // 同时取消 pending 的 hash 同步 timer
         if (_hashUpdateTimer) { clearTimeout(_hashUpdateTimer); _hashUpdateTimer = null }
-        activeHeading.value = ''
+        // 如果有锚点参数，先锁定再清空，防止 scrollTop=0 触发的滚动检测覆盖锚点
+        if (anchor) {
+          lockHeading(anchor)
+        } else {
+          clearActiveHeading()
+        }
         const contentEl = document.querySelector('.content')
         if (contentEl) contentEl.scrollTop = 0
         // 动态更新页面标题（SEO + 浏览器标签页）
@@ -286,9 +304,11 @@ export function useDocManager() {
   watch(editMode, async (newVal, oldVal) => {
     if (oldVal && !newVal && rawMarkdown.value && currentDoc.value) {
       await renderMarkdown(rawMarkdown.value, currentDoc.value, docsList.value)
+      rebuildHeadingsCache()
     }
     if (newVal && rawMarkdown.value) {
       extractTOCFromMarkdown(rawMarkdown.value, tocItems)
+      rebuildHeadingsCache()
     }
   })
 
@@ -368,6 +388,7 @@ export function useDocManager() {
     // 编辑模式下只更新 rawMarkdown（编辑器组件会自行比对内容决定是否刷新）
     if (editMode.value) return
     await renderMarkdown(content, currentDoc.value, docsList.value)
+    rebuildHeadingsCache()
   }
 
   // ===== 写操作 =====
@@ -421,6 +442,7 @@ export function useDocManager() {
         const contentEl = document.querySelector('.content')
         if (contentEl) contentEl.scrollTo({ top: savedScroll, behavior: 'smooth' })
       } else if (anchor) {
+        // popstate 同文档锚点跳转，_scrollToHeading 内部有锁
         _scrollToHeading(decodeURIComponent(anchor))
       } else {
         const contentEl = document.querySelector('.content')
@@ -438,7 +460,7 @@ export function useDocManager() {
     } else if (anchor) {
       const decodedAnchor = decodeURIComponent(anchor)
       await nextTick(); await waitForContentImages()
-      // 初始化加载用 instant 滚动，确保 updateActiveHeading 能立即检测到正确标题
+      // loadDoc 已经锁定了 activeHeading，这里只需要执行滚动
       const el = document.getElementById(decodedAnchor)
       if (el) el.scrollIntoView({ behavior: 'instant', block: 'start' })
     }
