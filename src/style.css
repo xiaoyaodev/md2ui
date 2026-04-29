@@ -384,6 +384,22 @@ body {
   font-weight: 600;
 }
 
+.markdown-content h5 {
+  font-size: 0.95em;
+  margin-top: 14px;
+  margin-bottom: 6px;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.markdown-content h6 {
+  font-size: 0.9em;
+  margin-top: 12px;
+  margin-bottom: 6px;
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+
 .markdown-content p {
   margin-bottom: 12px;
   color: var(--color-text);
@@ -1311,6 +1327,8 @@ body {
 .toc-item.toc-level-2 { padding-left: 20px; }
 .toc-item.toc-level-3 { padding-left: 28px; font-size: 11px; }
 .toc-item.toc-level-4 { padding-left: 36px; font-size: 11px; }
+.toc-item.toc-level-5 { padding-left: 44px; font-size: 11px; }
+.toc-item.toc-level-6 { padding-left: 52px; font-size: 11px; }
 
 /* ===== 拖拽条 ===== */
 .resizer {
