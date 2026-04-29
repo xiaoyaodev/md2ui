@@ -18,6 +18,10 @@
       </div>
     </div>
     <nav ref="tocNavRef" class="toc-nav">
+      <!-- 左侧连续竖线 -->
+      <div class="toc-track"></div>
+      <!-- marker 滑块（平滑过渡） -->
+      <div class="toc-marker" :style="markerStyle"></div>
       <template v-for="(item, index) in tocItems" :key="item.id">
         <!-- 顶级标题（h1/h2）：可点击折叠 -->
         <a
@@ -53,7 +57,7 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, reactive } from 'vue'
 import { List, ChevronRight, ChevronsDownUp, ChevronsUpDown } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -67,6 +71,9 @@ defineEmits(['scroll-to', 'toggle'])
 
 // 目录导航容器 ref
 const tocNavRef = ref(null)
+
+// marker 滑块位置
+const markerStyle = reactive({ top: '0px', height: '0px', opacity: 0 })
 
 // 记录被收起的顶级标题 id
 const collapsedSections = ref(new Set())
@@ -107,11 +114,14 @@ function toggleSection(id) {
     next.add(id)
   }
   collapsedSections.value = next
+  // 折叠/展开后重新计算 marker 位置
+  nextTick(() => updateMarker())
 }
 
 // 全部展开
 function expandAll() {
   collapsedSections.value = new Set()
+  nextTick(() => updateMarker())
 }
 
 // 全部收起
@@ -123,11 +133,33 @@ function collapseAll() {
     }
   })
   collapsedSections.value = ids
+  nextTick(() => updateMarker())
+}
+
+// 更新 marker 滑块位置
+function updateMarker() {
+  if (!props.activeHeading || !tocNavRef.value) {
+    markerStyle.opacity = 0
+    return
+  }
+  const el = tocNavRef.value.querySelector(`[data-toc-id="${CSS.escape(props.activeHeading)}"]`)
+  if (!el) {
+    markerStyle.opacity = 0
+    return
+  }
+  const navRect = tocNavRef.value.getBoundingClientRect()
+  const elRect = el.getBoundingClientRect()
+  markerStyle.top = `${elRect.top - navRect.top + tocNavRef.value.scrollTop}px`
+  markerStyle.height = `${elRect.height}px`
+  markerStyle.opacity = 1
 }
 
 // 滚动时自动展开当前激活标题所在的折叠分组，并将目录项滚动到可视区域
 watch(() => props.activeHeading, (id) => {
-  if (!id) return
+  if (!id) {
+    markerStyle.opacity = 0
+    return
+  }
   const index = props.tocItems.findIndex(item => item.id === id)
   if (index === -1) return
   // 如果激活的是子标题，找到其父级并展开
@@ -139,17 +171,19 @@ watch(() => props.activeHeading, (id) => {
       collapsedSections.value = next
     }
   }
-  // 等 DOM 更新后，将激活项滚动到目录可视区域
+  // 等 DOM 更新后，将激活项滚动到目录可视区域，并更新 marker
   nextTick(() => {
-    const el = tocNavRef.value?.querySelector(`[data-toc-id="${id}"]`)
+    const el = tocNavRef.value?.querySelector(`[data-toc-id="${CSS.escape(id)}"]`)
     if (el) {
       el.scrollIntoView({ block: 'center', behavior: 'smooth' })
     }
+    updateMarker()
   })
 })
 
-// 文档切换时重置折叠状态
+// 文档切换时重置折叠状态和 marker
 watch(() => props.tocItems, () => {
   collapsedSections.value = new Set()
+  markerStyle.opacity = 0
 })
 </script>

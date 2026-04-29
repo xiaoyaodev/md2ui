@@ -279,6 +279,19 @@ body {
 .markdown-content h5,
 .markdown-content h6 {
   position: relative;
+  scroll-margin-top: 60px;
+}
+
+/* 标题锚点跳转高亮闪烁动画 */
+@keyframes heading-flash {
+  0% { background-color: transparent; }
+  15% { background-color: rgba(66, 184, 131, 0.15); }
+  100% { background-color: transparent; }
+}
+
+.markdown-content .heading-flash {
+  animation: heading-flash 1.5s ease-out;
+  border-radius: 4px;
 }
 
 .markdown-content h1:hover .heading-anchor,
@@ -293,6 +306,44 @@ body {
 .markdown-content .heading-anchor:hover {
   color: var(--color-accent);
   text-decoration: none;
+}
+
+/* 锚点提示气泡（hover + 点击复制共用同一位置） */
+.markdown-content .heading-anchor::after {
+  content: '复制链接';
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 4px);
+  padding: 1px 6px;
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  font-weight: 400;
+  border-radius: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 10;
+}
+
+.markdown-content .heading-anchor:hover::after {
+  opacity: 1;
+}
+
+/* 点击复制后切换为"已复制"状态 */
+.markdown-content .heading-anchor.anchor-copied::after {
+  content: '已复制';
+  background: var(--color-success-bg, #dafbe1);
+  color: var(--color-success, #1a7f37);
+  opacity: 1;
+}
+
+.markdown-content .heading-anchor.anchor-copy-error::after {
+  content: '复制失败';
+  background: var(--color-error-bg, #ffebe9);
+  color: var(--color-error-text, #cf222e);
+  opacity: 1;
 }
 
 .markdown-content h1 {
@@ -1098,6 +1149,11 @@ body {
   justify-content: space-between;
   padding: 0 12px 8px;
   border-bottom: 1px solid var(--color-border);
+  position: sticky;
+  top: 0;
+  background: var(--color-bg);
+  z-index: 1;
+  padding-top: 0;
 }
 
 .toc-title {
@@ -1157,6 +1213,31 @@ body {
 
 .toc-nav {
   padding: 8px 0;
+  position: relative;
+}
+
+/* 左侧连续竖线 */
+.toc-track {
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: var(--color-border-light);
+  border-radius: 1px;
+}
+
+/* marker 滑块 — 平滑过渡 */
+.toc-marker {
+  position: absolute;
+  left: 0;
+  width: 2px;
+  background: var(--color-accent);
+  border-radius: 1px;
+  transition: top 0.25s cubic-bezier(0.65, 0, 0.35, 1),
+              height 0.25s cubic-bezier(0.65, 0, 0.35, 1),
+              opacity 0.25s;
+  z-index: 1;
 }
 
 .toc-item {
@@ -1169,7 +1250,6 @@ body {
   font-size: 12px;
   line-height: 1.5;
   transition: all 0.1s;
-  border-left: 2px solid transparent;
 }
 
 .toc-item-text {
@@ -1216,7 +1296,6 @@ body {
 
 .toc-item.active {
   color: var(--color-accent);
-  border-left-color: var(--color-accent);
   font-weight: 500;
   background: var(--color-accent-bg);
   border-radius: 0 4px 4px 0;

@@ -1,6 +1,6 @@
 /**
  * 图片格式转换工具（共享模块）
- * 提供 imgToPngBlob / svgToPngBlob / loadImageToBlob 等方法
+ * 提供 imgToPngBlob / svgToPngBlob 方法
  * 供 useMarkdown.js 和 ImageZoom.vue 共用
  */
 
@@ -28,7 +28,7 @@ export async function imgToPngBlob(src) {
  * @param {string} src - 图片地址
  * @param {boolean} useCors - 是否设置 crossOrigin
  */
-export function loadImageToBlob(src, useCors) {
+function loadImageToBlob(src, useCors) {
   return new Promise((resolve, reject) => {
     const image = new Image()
     if (useCors) image.crossOrigin = 'anonymous'
@@ -49,7 +49,7 @@ export function loadImageToBlob(src, useCors) {
 /**
  * 将任意图片 blob 通过 canvas 转为 PNG blob
  */
-export function blobToCanvasPng(srcBlob, scale = 1) {
+function blobToCanvasPng(srcBlob, scale = 1) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(srcBlob)
     const image = new Image()

@@ -4,7 +4,7 @@ import { useMarkdown } from './useMarkdown.js'
 import { useSearch } from './useSearch.js'
 import { useScroll } from './useScroll.js'
 import { useMobile } from './useMobile.js'
-import { findDoc, findFirstDoc, findReadmeDoc, findDocByHash, expandParents, flattenDocsList, expandAll, collapseAll } from './useDocTree.js'
+import { findDoc, findFirstDoc, findReadmeDoc, findDocByHash, expandParents, flattenDocsList, expandAll, collapseAll, buildHashIndex } from './useDocTree.js'
 import { stripOrderPrefix } from './useDocHash.js'
 
 // 等待内容区域图片加载完成
@@ -104,6 +104,7 @@ export function useDocManager() {
   // ===== 文档列表加载 =====
   async function loadDocsList() {
     docsList.value = await docService.fetchDocsList()
+    buildHashIndex(docsList.value, docHash)
     restoreExpandedState()
     buildIndex(docsList.value)
   }
@@ -224,10 +225,68 @@ export function useDocManager() {
   }
 
   // ===== 内容区点击处理 =====
+
+  // 复制锚点链接到剪贴板（通过 class 切换锚点旁提示文字）
+  async function copyAnchorLink(anchorId, anchorEl) {
+    const base = currentDoc.value ? `/${docHash(currentDoc.value)}` : window.location.pathname
+    const url = `${window.location.origin}${base}#${anchorId}`
+    try {
+      await navigator.clipboard.writeText(url)
+      anchorEl.classList.add('anchor-copied')
+      setTimeout(() => anchorEl.classList.remove('anchor-copied'), 1500)
+    } catch {
+      anchorEl.classList.add('anchor-copy-error')
+      setTimeout(() => anchorEl.classList.remove('anchor-copy-error'), 1500)
+    }
+  }
+
   function handleContentClick(event, { onZoom }) {
     const target = event.target
+
+    // 优先判断图片放大（即使图片在链接内，也走放大逻辑而非链接跳转）
+    const isImg = target.tagName === 'IMG' && target.classList.contains('zoomable-image')
+    const mermaidEl = target.closest('.mermaid') || target.closest('.mermaid-svg')
+    const isMermaid = mermaidEl && mermaidEl.classList.contains('zoomable-image')
+    if (isImg || isMermaid) {
+      event.preventDefault()
+      const container = document.querySelector('.markdown-content')
+      if (!container) return
+      const allZoomable = [...container.querySelectorAll('.zoomable-image')]
+      const images = allZoomable.map(el => {
+        if (el.tagName === 'IMG') {
+          return `<img src="${el.src}" alt="${el.alt || ''}" style="max-width: 100%; height: auto;" />`
+        }
+        const clone = el.cloneNode(true)
+        clone.querySelectorAll('.mermaid-copy-btn, .image-copy-btn').forEach(btn => btn.remove())
+        return clone.innerHTML
+      })
+      const clickedEl = isImg ? target : mermaidEl
+      const index = allZoomable.indexOf(clickedEl)
+      onZoom({ images, index: Math.max(index, 0) })
+      return
+    }
+
+    // 链接处理
     const link = target.closest('a')
     if (link) {
+      // 标题锚点点击：复制链接 + 跳转 + 高亮
+      if (link.classList.contains('heading-anchor')) {
+        event.preventDefault()
+        const anchorId = link.dataset.anchor
+        if (anchorId) {
+          copyAnchorLink(anchorId, link)
+          scrollToHeading(anchorId, { push: true })
+          // 触发高亮闪烁动画
+          const heading = document.getElementById(anchorId)
+          if (heading) {
+            heading.classList.remove('heading-flash')
+            void heading.offsetWidth // 强制 reflow 重置动画
+            heading.classList.add('heading-flash')
+            heading.addEventListener('animationend', () => heading.classList.remove('heading-flash'), { once: true })
+          }
+        }
+        return
+      }
       const docKey = link.dataset.docKey
       if (docKey) {
         event.preventDefault()
@@ -245,25 +304,6 @@ export function useDocManager() {
         return
       }
       return
-    }
-    const isImg = target.tagName === 'IMG' && target.classList.contains('zoomable-image')
-    const mermaidEl = target.closest('.mermaid') || target.closest('.mermaid-svg')
-    const isMermaid = mermaidEl && mermaidEl.classList.contains('zoomable-image')
-    if (isImg || isMermaid) {
-      const container = document.querySelector('.markdown-content')
-      if (!container) return
-      const allZoomable = [...container.querySelectorAll('.zoomable-image')]
-      const images = allZoomable.map(el => {
-        if (el.tagName === 'IMG') {
-          return `<img src="${el.src}" alt="${el.alt || ''}" style="max-width: 100%; height: auto;" />`
-        }
-        const clone = el.cloneNode(true)
-        clone.querySelectorAll('.mermaid-copy-btn, .image-copy-btn').forEach(btn => btn.remove())
-        return clone.innerHTML
-      })
-      const clickedEl = isImg ? target : mermaidEl
-      const index = allZoomable.indexOf(clickedEl)
-      onZoom({ images, index: Math.max(index, 0) })
     }
   }
 
@@ -366,6 +406,7 @@ export function useDocManager() {
     // 保存展开状态 → 替换 → 恢复
     const expandedKeys = getExpandedKeys(docsList.value)
     docsList.value = newTree
+    buildHashIndex(docsList.value, docHash)
     applyExpandedState(docsList.value, expandedKeys)
     if (currentDoc.value) expandParents(docsList.value, currentDoc.value)
     buildIndex(docsList.value)
@@ -455,6 +496,7 @@ export function useDocManager() {
     await loadDoc(doc.key, { replace: true, keepState: savedScroll != null, anchor: anchor ? decodeURIComponent(anchor) : '' })
     if (savedScroll != null) {
       await nextTick()
+      await waitForContentImages()
       const contentEl = document.querySelector('.content')
       if (contentEl) contentEl.scrollTo({ top: savedScroll })
     } else if (anchor) {

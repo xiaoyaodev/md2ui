@@ -1,5 +1,10 @@
 import { ref } from 'vue'
 
+// ===== 常量 =====
+// smooth 滚动锁定超时（scrollend 事件优先解锁，此值仅作兜底）
+// 低性能设备或长文档上 smooth 滚动可能超过 800ms，拉长到 1500ms 确保安全
+const SCROLL_LOCK_TIMEOUT_MS = 1500
+
 // 单例状态，确保多处调用共享同一份
 const scrollProgress = ref(0)
 const showBackToTop = ref(false)
@@ -8,18 +13,23 @@ const activeHeading = ref('')
 // 外部注入的 tocItems 引用，用于编辑模式下通过文本匹配标题
 let _tocItemsRef = null
 
-// 节流定时器，避免滚动时频繁查询 DOM
-let _activeHeadingTimer = null
-
 // 点击目录项后锁定，防止滚动检测覆盖 activeHeading 导致闪动
 let _locked = false
 let _lockTimer = null
 
-// 标题元素缓存（避免每次滚动都 querySelectorAll）
+// 标题元素缓存
 let _headingsCache = null
+
+// MutationObserver：监听 .markdown-content 子树变化，自动失效标题缓存
+let _mutationObserver = null
 
 // 标记：true 表示 activeHeading 被文档切换清空，不应同步到 URL
 let _suppressHashClear = false
+
+// IntersectionObserver 实例
+let _observer = null
+// 记录当前在视口中的标题（id → IntersectionObserverEntry）
+const _visibleHeadings = new Map()
 
 export function useScroll() {
 
@@ -28,9 +38,26 @@ export function useScroll() {
     _tocItemsRef = tocItems
   }
 
-  // 重建标题缓存（文档渲染后调用）
+  // 重建标题缓存并重新设置 IntersectionObserver
   function rebuildHeadingsCache() {
     _headingsCache = null
+    _setupMutationObserver()
+    _setupObserver()
+  }
+
+  // 设置 MutationObserver 监听 .markdown-content 子树变化，自动失效标题缓存
+  function _setupMutationObserver() {
+    if (_mutationObserver) {
+      _mutationObserver.disconnect()
+      _mutationObserver = null
+    }
+    const container = document.querySelector('.markdown-content')
+    if (!container) return
+    _mutationObserver = new MutationObserver(() => {
+      // 子树变化时失效缓存，下次 _getHeadings 会重新查询
+      _headingsCache = null
+    })
+    _mutationObserver.observe(container, { childList: true, subtree: true })
   }
 
   function _getHeadings() {
@@ -43,7 +70,100 @@ export function useScroll() {
     return _headingsCache
   }
 
-  // 监听滚动：更新进度条和 activeHeading（驱动 TOC 高亮），不操作 URL
+  // 设置 IntersectionObserver 监听标题元素
+  function _setupObserver() {
+    // 清理旧的 observer
+    if (_observer) {
+      _observer.disconnect()
+      _observer = null
+    }
+    _visibleHeadings.clear()
+
+    const content = document.querySelector('.content')
+    if (!content) return
+
+    const headings = _getHeadings()
+    if (!headings.length) return
+
+    // rootMargin: 顶部 0px，底部 -70%，即标题进入视口上方 30% 区域时触发
+    _observer = new IntersectionObserver(
+      (entries) => {
+        if (_locked) return
+
+        for (const entry of entries) {
+          const id = entry.target.id || findTocIdByText(getHeadingText(entry.target))
+          if (!id) continue
+          if (entry.isIntersecting) {
+            _visibleHeadings.set(id, entry)
+          } else {
+            _visibleHeadings.delete(id)
+          }
+        }
+
+        _resolveActiveHeading()
+      },
+      {
+        root: content,
+        // 上方全部可见，下方只保留 30%（裁掉底部 70%）
+        rootMargin: '0px 0px -70% 0px',
+        threshold: 0
+      }
+    )
+
+    for (const heading of headings) {
+      _observer.observe(heading)
+    }
+  }
+
+  // 根据可见标题集合确定当前激活标题
+  // 策略：取文档顺序中最后一个进入检测区域的标题
+  function _resolveActiveHeading() {
+    if (_locked) return
+
+    const headings = _getHeadings()
+    if (!headings.length) return
+
+    const content = document.querySelector('.content')
+
+    // 边界处理：滚动到底部时，强制激活最后一个标题
+    if (content) {
+      const atBottom = content.scrollTop + content.clientHeight >= content.scrollHeight - 10
+      if (atBottom) {
+        // 从后往前找最后一个有 id 的标题
+        for (let i = headings.length - 1; i >= 0; i--) {
+          const id = headings[i].id || findTocIdByText(getHeadingText(headings[i]))
+          if (id) {
+            if (!activeHeading.value) _suppressHashClear = false
+            activeHeading.value = id
+            return
+          }
+        }
+      }
+    }
+
+    // 正常情况：从可见标题中取文档顺序最后一个
+    if (_visibleHeadings.size > 0) {
+      let lastId = ''
+      for (const heading of headings) {
+        const id = heading.id || findTocIdByText(getHeadingText(heading))
+        if (id && _visibleHeadings.has(id)) {
+          lastId = id
+        }
+      }
+      if (lastId) {
+        activeHeading.value = lastId
+        return
+      }
+    }
+
+    // 没有可见标题时，用传统方式兜底（滚动位置在第一个标题之前）
+    if (content && content.scrollTop < 100) {
+      if (activeHeading.value) _suppressHashClear = false
+      activeHeading.value = ''
+    }
+  }
+
+  // 监听滚动：更新进度条、返回顶部按钮，以及处理底部边界
   function handleScroll(e) {
     const element = e.target
     const scrollTop = element.scrollTop
@@ -54,11 +174,12 @@ export function useScroll() {
       showBackToTop.value = scrollTop > 300
     }
 
-    if (!_activeHeadingTimer) {
-      _activeHeadingTimer = setTimeout(() => {
-        _activeHeadingTimer = null
-        updateActiveHeading()
-      }, 80)
+    // 底部边界检测（IO 的 rootMargin 裁掉了底部 70%，滚到底时可能漏掉）
+    if (!_locked) {
+      const atBottom = scrollTop + element.clientHeight >= element.scrollHeight - 10
+      if (atBottom) {
+        _resolveActiveHeading()
+      }
     }
   }
 
@@ -76,38 +197,12 @@ export function useScroll() {
     return item ? item.id : ''
   }
 
-  // 更新当前激活的标题
-  function updateActiveHeading() {
-    // 点击目录项后的锁定期内跳过，避免闪动
-    if (_locked) return
-
-    const content = document.querySelector('.content')
-    if (!content) return
-
-    const headings = _getHeadings()
-    const scrollTop = content.scrollTop
-    const contentRect = content.getBoundingClientRect()
-
-    let currentId = ''
-    for (const heading of headings) {
-      const rect = heading.getBoundingClientRect()
-      const offsetTop = rect.top - contentRect.top + scrollTop
-      if (offsetTop <= scrollTop + 100) {
-        currentId = heading.id || findTocIdByText(getHeadingText(heading))
-      }
-    }
-
-    // 滚动导致的清空（滚到顶部），标记为非文档切换
-    if (!currentId && activeHeading.value) {
-      _suppressHashClear = false
-    }
-    activeHeading.value = currentId
-  }
-
   // 解锁函数
   function _unlock() {
     _locked = false
     if (_lockTimer) { clearTimeout(_lockTimer); _lockTimer = null }
+    // 解锁后立即重新解析一次，确保 IO 状态同步
+    _resolveActiveHeading()
   }
 
   // 滚动到指定标题
@@ -119,19 +214,20 @@ export function useScroll() {
 
     const content = document.querySelector('.content')
 
-    // 优先用 scrollend 事件解锁，800ms 兜底
+    // 优先用 scrollend 事件解锁，SCROLL_LOCK_TIMEOUT_MS 兜底
     if (content) {
       content.addEventListener('scrollend', _unlock, { once: true })
     }
     _lockTimer = setTimeout(() => {
       _unlock()
-      // scrollend 可能已触发，removeEventListener 是安全的
       if (content) content.removeEventListener('scrollend', _unlock)
-    }, 800)
+    }, SCROLL_LOCK_TIMEOUT_MS)
 
     let el = document.getElementById(id)
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      // 触发高亮闪烁动画
+      _flashHeading(el)
       return
     }
     // 编辑模式下标题无 id，通过 tocItems 找到文本再匹配 DOM
@@ -143,6 +239,7 @@ export function useScroll() {
         for (const heading of headings) {
           if (getHeadingText(heading) === tocItem.text) {
             heading.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            _flashHeading(heading)
             return
           }
         }
@@ -150,8 +247,16 @@ export function useScroll() {
     }
   }
 
+  // 触发标题高亮闪烁动画
+  function _flashHeading(el) {
+    el.classList.remove('heading-flash')
+    void el.offsetWidth // 强制 reflow 重置动画
+    el.classList.add('heading-flash')
+    el.addEventListener('animationend', () => el.classList.remove('heading-flash'), { once: true })
+  }
+
   // 锁定 activeHeading 一段时间（供外部在非 smooth 滚动场景使用，如页面刷新定位锚点）
-  function lockHeading(id, durationMs = 800) {
+  function lockHeading(id, durationMs = SCROLL_LOCK_TIMEOUT_MS) {
     activeHeading.value = id
     _locked = true
     if (_lockTimer) clearTimeout(_lockTimer)
