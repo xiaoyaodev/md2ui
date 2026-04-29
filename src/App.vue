@@ -5,7 +5,7 @@
       v-if="isMobile"
       @open-drawer="mobileDrawerOpen = true"
       @go-home="goHome"
-      @open-search="openSearch"
+      @open-search="mobileSearchOpen = true"
     />
     <!-- 桌面端顶栏 -->
     <TopBar
@@ -49,9 +49,15 @@
     <button v-if="!isMobile && sidebarCollapsed" class="expand-btn expand-btn-left" @click="sidebarCollapsed = false" title="展开导航">
       <ChevronRight :size="14" />
     </button>
+    <!-- 移动端搜索页（替换内容区） -->
+    <MobileSearch
+      v-if="isMobile && mobileSearchOpen"
+      @close="mobileSearchOpen = false"
+      @select="(key) => { mobileSearchOpen = false; handleSearchSelect(key) }"
+    />
     <!-- 内容区：查看模式 / 编辑模式 -->
     <DocContent
-      v-if="!editMode"
+      v-else-if="!editMode"
       :showWelcome="showWelcome"
       :htmlContent="htmlContent"
       :prevDoc="prevDoc"
@@ -120,12 +126,12 @@ import EditorContentVue from './components/EditorContent.vue'
 import TableOfContents from './components/TableOfContents.vue'
 import MobileToc from './components/MobileToc.vue'
 import ImageZoom from './components/ImageZoom.vue'
+import MobileSearch from './components/MobileSearch.vue'
 import { useDocManager } from './composables/useDocManager.js'
 import { useResize } from './composables/useResize.js'
 import { useFileWatcher } from './composables/useFileWatcher.js'
 import { resetContentEtag } from './services/DocService.js'
 
-import { useSearch } from './composables/useSearch.js'
 import { useMobile } from './composables/useMobile.js'
 
 
@@ -135,6 +141,7 @@ const tocCollapsed = ref(sessionStorage.getItem('tocCollapsed') === 'true')
 const zoomVisible = ref(false)
 const zoomImages = ref([])
 const zoomIndex = ref(0)
+const mobileSearchOpen = ref(false)
 
 // composables
 const {
@@ -152,7 +159,6 @@ const {
 
 const { sidebarWidth, tocWidth, startResize } = useResize()
 
-const { openSearch } = useSearch()
 const { isMobile, mobileDrawerOpen, mobileTocOpen } = useMobile()
 
 // 文件监听（DocService 统一处理模式检测和 ETag）
@@ -162,72 +168,39 @@ useFileWatcher({
   onDocContentChange: (content) => reloadCurrentDoc(content)
 })
 
-// 切换编辑模式（基于锚点/标题文本保持阅读位置）
+// 切换编辑模式（记住当前锚点，切换后复用 scrollToHeading 恢复位置）
 function onToggleEdit(isEdit) {
+  // 记住当前激活的锚点
+  const savedAnchor = activeHeading.value
+  // 记录滚动比例作为兜底
   const contentEl = document.querySelector('.content')
-  let anchorId = ''
-  let headingText = ''
   let scrollRatio = 0
-
   if (contentEl) {
-    const headings = contentEl.querySelectorAll('.markdown-content h1, .markdown-content h2, .markdown-content h3, .markdown-content h4, .markdown-content h5, .markdown-content h6')
-    const contentRect = contentEl.getBoundingClientRect()
-    const scrollTop = contentEl.scrollTop
-
-    // 找到当前视口中最近的标题（最后一个已滚过顶部的）
-    for (const heading of headings) {
-      const rect = heading.getBoundingClientRect()
-      const offsetFromTop = rect.top - contentRect.top
-      if (offsetFromTop <= 80) {
-        anchorId = heading.id || ''
-        // 提取纯文本（去掉锚点图标等）
-        const clone = heading.cloneNode(true)
-        clone.querySelectorAll('.heading-anchor').forEach(a => a.remove())
-        headingText = clone.textContent.trim()
-      }
-    }
-
-    // 记录滚动比例作为兜底
     const scrollHeight = contentEl.scrollHeight - contentEl.clientHeight
-    scrollRatio = scrollHeight > 0 ? scrollTop / scrollHeight : 0
+    scrollRatio = scrollHeight > 0 ? contentEl.scrollTop / scrollHeight : 0
   }
 
   editMode.value = isEdit
   sessionStorage.setItem('editMode', isEdit)
 
+  // 等待 DOM 渲染完成后恢复位置
   nextTick(() => {
-    const newContentEl = document.querySelector('.content')
-    if (!newContentEl) return
+    // 再等一帧，确保 tiptap 编辑器完成渲染
+    requestAnimationFrame(() => {
+      const newContentEl = document.querySelector('.content')
+      if (!newContentEl) return
 
-    // 策略1：通过 id 定位（查看模式有 id）
-    if (anchorId) {
-      const target = document.getElementById(anchorId)
-      if (target) {
-        target.scrollIntoView({ block: 'start' })
-        activeHeading.value = anchorId
-        return
-      }
-    }
-
-    // 策略2：通过标题文本匹配（编辑模式无 id，但文本一致）
-    if (headingText) {
-      const headings = newContentEl.querySelectorAll('h1, h2, h3, h4, h5, h6')
-      for (const heading of headings) {
-        const clone = heading.cloneNode(true)
-        clone.querySelectorAll('.heading-anchor').forEach(a => a.remove())
-        if (clone.textContent.trim() === headingText) {
-          heading.scrollIntoView({ block: 'start' })
-          if (heading.id) activeHeading.value = heading.id
-          return
+      if (savedAnchor) {
+        // 直接复用 scrollToHeading，编辑模式下 _syncHeadingIds 已注入 id
+        scrollToHeading(savedAnchor)
+      } else if (scrollRatio > 0) {
+        // 无锚点时按滚动比例恢复
+        const scrollHeight = newContentEl.scrollHeight - newContentEl.clientHeight
+        if (scrollHeight > 0) {
+          newContentEl.scrollTop = scrollRatio * scrollHeight
         }
       }
-    }
-
-    // 策略3：按滚动比例恢复
-    const scrollHeight = newContentEl.scrollHeight - newContentEl.clientHeight
-    if (scrollHeight > 0) {
-      newContentEl.scrollTop = scrollRatio * scrollHeight
-    }
+    })
   })
 }
 

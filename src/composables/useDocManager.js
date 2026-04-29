@@ -156,7 +156,8 @@ export function useDocManager() {
         } else {
           await renderMarkdown(content, key, docsList.value)
         }
-        // 渲染完成后重建标题缓存
+        // 渲染完成后重建标题缓存（编辑模式需等 tiptap 渲染完成）
+        await nextTick()
         rebuildHeadingsCache()
         // 切换文档时清空 activeHeading（标记为文档切换，不清 URL hash）
         // 同时取消 pending 的 hash 同步 timer
@@ -344,10 +345,13 @@ export function useDocManager() {
   watch(editMode, async (newVal, oldVal) => {
     if (oldVal && !newVal && rawMarkdown.value && currentDoc.value) {
       await renderMarkdown(rawMarkdown.value, currentDoc.value, docsList.value)
+      await nextTick()
       rebuildHeadingsCache()
     }
     if (newVal && rawMarkdown.value) {
       extractTOCFromMarkdown(rawMarkdown.value, tocItems)
+      // 等待 tiptap 编辑器渲染完成后再重建标题缓存（注入 id）
+      await nextTick()
       rebuildHeadingsCache()
     }
   })
@@ -502,9 +506,8 @@ export function useDocManager() {
     } else if (anchor) {
       const decodedAnchor = decodeURIComponent(anchor)
       await nextTick(); await waitForContentImages()
-      // loadDoc 已经锁定了 activeHeading，这里只需要执行滚动
-      const el = document.getElementById(decodedAnchor)
-      if (el) el.scrollIntoView({ behavior: 'instant', block: 'start' })
+      // 复用 scrollToHeading，编辑模式下通过 _syncHeadingIds 注入的 id 或文本匹配均可定位
+      _scrollToHeading(decodedAnchor)
     }
   }
 

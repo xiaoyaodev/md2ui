@@ -46,6 +46,7 @@ export function useScroll() {
   }
 
   // 设置 MutationObserver 监听 .markdown-content 子树变化，自动失效标题缓存
+  let _mutationDebounce = null
   function _setupMutationObserver() {
     if (_mutationObserver) {
       _mutationObserver.disconnect()
@@ -56,6 +57,11 @@ export function useScroll() {
     _mutationObserver = new MutationObserver(() => {
       // 子树变化时失效缓存，下次 _getHeadings 会重新查询
       _headingsCache = null
+      // 防抖重建 IntersectionObserver，确保新增/删除的标题也能被监听
+      if (_mutationDebounce) clearTimeout(_mutationDebounce)
+      _mutationDebounce = setTimeout(() => {
+        _setupObserver()
+      }, 300)
     })
     _mutationObserver.observe(container, { childList: true, subtree: true })
   }
@@ -67,7 +73,31 @@ export function useScroll() {
     _headingsCache = [...content.querySelectorAll(
       '.markdown-content h1, .markdown-content h2, .markdown-content h3, .markdown-content h4, .markdown-content h5, .markdown-content h6'
     )]
+    // 编辑模式下 tiptap 渲染的标题没有 id，通过 tocItems 文本匹配注入 id
+    // 使注入后的标题能直接复用预览模式的 getElementById 锚点逻辑
+    _syncHeadingIds(_headingsCache)
     return _headingsCache
+  }
+
+  // 为缺少 id 的标题元素注入 id（基于 tocItems 文本匹配）
+  function _syncHeadingIds(headings) {
+    if (!_tocItemsRef || !_tocItemsRef.value || !_tocItemsRef.value.length) return
+    // 构建 text → id 的映射（处理重复文本：按出现顺序依次匹配）
+    const tocQueue = new Map()
+    for (const item of _tocItemsRef.value) {
+      if (!tocQueue.has(item.text)) {
+        tocQueue.set(item.text, [])
+      }
+      tocQueue.get(item.text).push(item.id)
+    }
+    for (const heading of headings) {
+      if (heading.id) continue // 已有 id，跳过
+      const text = getHeadingText(heading)
+      const ids = tocQueue.get(text)
+      if (ids && ids.length > 0) {
+        heading.id = ids.shift()
+      }
+    }
   }
 
   // 设置 IntersectionObserver 监听标题元素

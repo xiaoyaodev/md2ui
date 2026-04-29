@@ -298,6 +298,9 @@ function wrapTables() {
       // 已经处理过的跳过
       if (table.closest('.table-outer')) return
 
+      // 代码块内的行号表格跳过
+      if (table.closest('.code-block-wrapper') || table.closest('pre')) return
+
       // 构建结构：.table-outer > .table-toolbar + .table-wrapper > table
       const outer = document.createElement('div')
       outer.className = 'table-outer'
