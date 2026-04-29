@@ -114,14 +114,11 @@ function toggleSection(id) {
     next.add(id)
   }
   collapsedSections.value = next
-  // 折叠/展开后重新计算 marker 位置
-  nextTick(() => updateMarker())
 }
 
 // 全部展开
 function expandAll() {
   collapsedSections.value = new Set()
-  nextTick(() => updateMarker())
 }
 
 // 全部收起
@@ -133,7 +130,6 @@ function collapseAll() {
     }
   })
   collapsedSections.value = ids
-  nextTick(() => updateMarker())
 }
 
 // 更新 marker 滑块位置
@@ -142,7 +138,7 @@ function updateMarker() {
     markerStyle.opacity = 0
     return
   }
-  const el = tocNavRef.value.querySelector(`[data-toc-id="${CSS.escape(props.activeHeading)}"]`)
+  const el = tocNavRef.value.querySelector(`[data-toc-id="${props.activeHeading}"]`)
   if (!el) {
     markerStyle.opacity = 0
     return
@@ -173,7 +169,7 @@ watch(() => props.activeHeading, (id) => {
   }
   // 等 DOM 更新后，将激活项滚动到目录可视区域，并更新 marker
   nextTick(() => {
-    const el = tocNavRef.value?.querySelector(`[data-toc-id="${CSS.escape(id)}"]`)
+    const el = tocNavRef.value?.querySelector(`[data-toc-id="${id}"]`)
     if (el) {
       el.scrollIntoView({ block: 'center', behavior: 'smooth' })
     }
