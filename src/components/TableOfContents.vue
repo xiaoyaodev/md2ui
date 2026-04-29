@@ -170,8 +170,14 @@ watch(() => props.activeHeading, (id) => {
   // 等 DOM 更新后，将激活项滚动到目录可视区域，并更新 marker
   nextTick(() => {
     const el = tocNavRef.value?.querySelector(`[data-toc-id="${id}"]`)
-    if (el) {
-      el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    if (el && tocNavRef.value) {
+      // 只在 TOC 导航容器内滚动，避免 scrollIntoView 冒泡影响主内容区导致抖动
+      const navRect = tocNavRef.value.getBoundingClientRect()
+      const elRect = el.getBoundingClientRect()
+      const elCenter = elRect.top + elRect.height / 2
+      const navCenter = navRect.top + navRect.height / 2
+      const offset = elCenter - navCenter
+      tocNavRef.value.scrollBy({ top: offset, behavior: 'smooth' })
     }
     updateMarker()
   })

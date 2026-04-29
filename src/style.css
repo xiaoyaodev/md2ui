@@ -1116,9 +1116,9 @@ body {
   align-items: center;
   justify-content: center;
   gap: 1px;
-  background: var(--color-bg);
-  color: var(--color-text-secondary);
-  border: 1px solid var(--color-border);
+  background: #fff;
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
   border-radius: 6px;
   cursor: pointer;
   box-shadow: 0 1px 3px var(--color-shadow);
@@ -1127,9 +1127,9 @@ body {
 }
 
 .back-to-top:hover {
-  background: var(--color-bg-secondary);
-  color: var(--color-text);
-  border-color: var(--color-border);
+  background: var(--color-accent);
+  color: #fff;
+  border-color: var(--color-accent);
 }
 
 .progress-text {

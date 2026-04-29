@@ -39,29 +39,45 @@ export function useScroll() {
   }
 
   // 重建标题缓存并重新设置 IntersectionObserver
+  let _rebuildRetryTimer = null
   function rebuildHeadingsCache() {
+    if (_rebuildRetryTimer) { clearTimeout(_rebuildRetryTimer); _rebuildRetryTimer = null }
     _headingsCache = null
     _setupMutationObserver()
     _setupObserver()
+    // 如果 tocItems 有内容但 DOM 中没查到标题（编辑器还没渲染完），延迟重试
+    const headings = _headingsCache || []
+    const hasTocItems = _tocItemsRef && _tocItemsRef.value && _tocItemsRef.value.length > 0
+    if (headings.length === 0 && hasTocItems) {
+      _rebuildRetryTimer = setTimeout(() => {
+        _headingsCache = null
+        _setupMutationObserver()
+        _setupObserver()
+      }, 200)
+    }
   }
 
-  // 设置 MutationObserver 监听 .markdown-content 子树变化，自动失效标题缓存
+  // 设置 MutationObserver 监听内容区子树变化，自动失效标题缓存
   let _mutationDebounce = null
   function _setupMutationObserver() {
     if (_mutationObserver) {
       _mutationObserver.disconnect()
       _mutationObserver = null
     }
-    const container = document.querySelector('.markdown-content')
+    // 监听 .content 容器，兼容预览模式和编辑模式（编辑模式下可能有多个 .markdown-content）
+    const container = document.querySelector('.content')
     if (!container) return
     _mutationObserver = new MutationObserver(() => {
       // 子树变化时失效缓存，下次 _getHeadings 会重新查询
       _headingsCache = null
+      // 编辑模式下 tiptap 频繁修改 DOM，跳过 IntersectionObserver 重建避免抖动
+      const container = document.querySelector('.content')
+      if (container && container.classList.contains('editor-content')) return
       // 防抖重建 IntersectionObserver，确保新增/删除的标题也能被监听
       if (_mutationDebounce) clearTimeout(_mutationDebounce)
       _mutationDebounce = setTimeout(() => {
         _setupObserver()
-      }, 300)
+      }, 800)
     })
     _mutationObserver.observe(container, { childList: true, subtree: true })
   }
@@ -193,6 +209,49 @@ export function useScroll() {
     }
   }
 
+  // 编辑模式下基于滚动位置计算当前激活标题
+  // tiptap 会频繁替换 DOM 元素导致 IntersectionObserver 失效，改用传统方式
+  function _resolveActiveHeadingByScroll(container) {
+    if (_locked) return
+    // 每次都重新查询标题元素，因为 tiptap 可能已替换 DOM
+    _headingsCache = null
+    const headings = _getHeadings()
+    if (!headings.length) return
+
+    const scrollTop = container.scrollTop
+    // 检测区域：视口上方 30%（与 IO 的 rootMargin 策略一致）
+    const threshold = container.clientHeight * 0.3
+
+    // 滚动到底部时，强制激活最后一个标题
+    const atBottom = scrollTop + container.clientHeight >= container.scrollHeight - 10
+    if (atBottom) {
+      for (let i = headings.length - 1; i >= 0; i--) {
+        const id = headings[i].id || findTocIdByText(getHeadingText(headings[i]))
+        if (id) {
+          activeHeading.value = id
+          return
+        }
+      }
+    }
+
+    // 从后往前找最后一个滚过检测线的标题
+    let lastId = ''
+    for (const heading of headings) {
+      // offsetTop 是相对于 offsetParent 的，需要计算相对于滚动容器的位置
+      const headingTop = heading.getBoundingClientRect().top - container.getBoundingClientRect().top
+      if (headingTop <= threshold) {
+        const id = heading.id || findTocIdByText(getHeadingText(heading))
+        if (id) lastId = id
+      }
+    }
+
+    if (lastId) {
+      activeHeading.value = lastId
+    } else if (scrollTop < 100) {
+      activeHeading.value = ''
+    }
+  }
+
   // 监听滚动：更新进度条、返回顶部按钮，以及处理底部边界
   function handleScroll(e) {
     const element = e.target
@@ -202,6 +261,14 @@ export function useScroll() {
     if (scrollHeight > 0) {
       scrollProgress.value = Math.round((scrollTop / scrollHeight) * 100)
       showBackToTop.value = scrollTop > 300
+    }
+
+    // 编辑模式下 tiptap 会替换 DOM 元素导致 IO 失效，改用滚动位置计算
+    if (element.classList.contains('editor-content')) {
+      if (!_locked) {
+        _resolveActiveHeadingByScroll(element)
+      }
+      return
     }
 
     // 底部边界检测（IO 的 rootMargin 裁掉了底部 70%，滚到底时可能漏掉）

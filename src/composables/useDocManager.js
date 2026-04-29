@@ -350,7 +350,6 @@ export function useDocManager() {
     }
     if (newVal && rawMarkdown.value) {
       extractTOCFromMarkdown(rawMarkdown.value, tocItems)
-      // 等待 tiptap 编辑器渲染完成后再重建标题缓存（注入 id）
       await nextTick()
       rebuildHeadingsCache()
     }
@@ -429,9 +428,9 @@ export function useDocManager() {
     const hashStr = String(hash)
     if (hashStr === lastContentHash) return
     lastContentHash = hashStr
-    rawMarkdown.value = content
-    // 编辑模式下只更新 rawMarkdown（编辑器组件会自行比对内容决定是否刷新）
+    // 编辑模式下编辑器是内容权威来源，不回写 rawMarkdown 避免循环抖动
     if (editMode.value) return
+    rawMarkdown.value = content
     await renderMarkdown(content, currentDoc.value, docsList.value)
     rebuildHeadingsCache()
   }
