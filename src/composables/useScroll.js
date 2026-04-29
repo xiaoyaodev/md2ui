@@ -328,11 +328,14 @@ export function useScroll() {
       return
     }
     // 编辑模式下标题无 id，通过 tocItems 找到文本再匹配 DOM
+    // 注意：不调用 _getHeadings() 避免 _syncHeadingIds 修改 tiptap DOM 导致节点重建
     if (_tocItemsRef && _tocItemsRef.value) {
       const tocItem = _tocItemsRef.value.find(t => t.id === id)
       if (tocItem) {
         if (!content) return
-        const headings = _getHeadings()
+        const headings = [...content.querySelectorAll(
+          '.markdown-content h1, .markdown-content h2, .markdown-content h3, .markdown-content h4, .markdown-content h5, .markdown-content h6'
+        )]
         for (const heading of headings) {
           if (getHeadingText(heading) === tocItem.text) {
             heading.scrollIntoView({ behavior: 'smooth', block: 'start' })

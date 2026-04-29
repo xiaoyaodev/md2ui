@@ -44,6 +44,7 @@
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { nodeViewProps, NodeViewWrapper } from '@tiptap/vue-3'
 import mermaid from 'mermaid'
+import { getMermaidCache, setMermaidCache } from '../composables/useMermaidCache.js'
 
 const props = defineProps(nodeViewProps)
 
@@ -63,17 +64,24 @@ async function renderChart() {
     renderError.value = false
     return
   }
+  // 优先使用缓存
+  const cached = getMermaidCache(text)
+  if (cached) {
+    svgContent.value = cached
+    renderError.value = false
+    return
+  }
   try {
     const id = 'mermaid-editor-' + Math.random().toString(36).substr(2, 9)
     const { svg } = await mermaid.render(id, text)
     svgContent.value = svg
     renderError.value = false
+    // 写入缓存
+    setMermaidCache(text, svg)
   } catch (e) {
     console.error('Mermaid 编辑器渲染失败:', e)
     svgContent.value = ''
     renderError.value = true
-    // 清理 Mermaid 渲染失败时残留的 DOM 元素
-    const errId = 'mermaid-editor-' // 前缀匹配清理
     document.querySelectorAll('[id^="mermaid-editor-"][id$="-svg"]').forEach(el => {
       if (el.closest('.mermaid-block-wrapper') === null) el.remove()
     })

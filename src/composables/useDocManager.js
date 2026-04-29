@@ -6,6 +6,7 @@ import { useScroll } from './useScroll.js'
 import { useMobile } from './useMobile.js'
 import { findDoc, findFirstDoc, findReadmeDoc, findDocByHash, expandParents, flattenDocsList, expandAll, collapseAll, buildHashIndex } from './useDocTree.js'
 import { stripOrderPrefix } from './useDocHash.js'
+import { clearMermaidCache } from './useMermaidCache.js'
 
 // 等待内容区域图片加载完成
 async function waitForContentImages(timeoutMs = 3000) {
@@ -130,6 +131,7 @@ export function useDocManager() {
     currentDoc.value = key
     showWelcome.value = false
     lastContentHash = ''
+    clearMermaidCache()
     docService.resetContentEtag()
     const hash = docHash(key)
     const url = anchor ? `/${hash}#${anchor}` : `/${hash}`

@@ -191,10 +191,8 @@ function onToggleEdit(isEdit) {
       if (!newContentEl) return
 
       if (savedAnchor) {
-        // 直接复用 scrollToHeading，编辑模式下 _syncHeadingIds 已注入 id
         scrollToHeading(savedAnchor)
       } else if (scrollRatio > 0) {
-        // 无锚点时按滚动比例恢复
         const scrollHeight = newContentEl.scrollHeight - newContentEl.clientHeight
         if (scrollHeight > 0) {
           newContentEl.scrollTop = scrollRatio * scrollHeight

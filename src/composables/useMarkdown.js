@@ -86,7 +86,8 @@ function createRenderer(currentDocKey, docsList) {
   renderer.code = function(code, language) {
     if (language === 'mermaid') {
       const id = 'mermaid-' + Math.random().toString(36).substr(2, 9)
-      return `<div class="mermaid" id="${id}">${code}</div>`
+      const encoded = encodeURIComponent(code)
+      return `<div class="mermaid mermaid-pending" id="${id}" data-source="${encoded}"><div class="mermaid-loading">渲染中...</div></div>`
     }
     // 高亮代码
     let highlighted
@@ -241,53 +242,64 @@ function showCopyTip(btn, success) {
 
 // 图片格式转换工具（从共享模块导入）
 import { imgToPngBlob, svgToPngBlob } from '../utils/imageConverter.js'
+import { getMermaidCache, setMermaidCache } from './useMermaidCache.js'
 
-// 渲染 Mermaid 图表
+// 渲染 Mermaid 图表（并行渲染所有图表，等全部完成后返回）
 async function renderMermaid() {
   await nextTick()
-  const mermaidElements = document.querySelectorAll('.mermaid')
-  for (const element of mermaidElements) {
+  const mermaidElements = document.querySelectorAll('.mermaid-pending')
+  if (!mermaidElements.length) return
+
+  // 所有图表并行渲染
+  const tasks = Array.from(mermaidElements).map(async (element) => {
+    const code = decodeURIComponent(element.dataset.source || '')
+    if (!code) return
+    const id = element.id
     try {
-      const id = element.id
-      const code = element.textContent
-      const { svg } = await mermaid.render(id + '-svg', code)
+      // 优先使用缓存
+      let svg = getMermaidCache(code)
+      if (!svg) {
+        const result = await mermaid.render(id + '-svg', code)
+        svg = result.svg
+        setMermaidCache(code, svg)
+      }
       element.innerHTML = svg
+      element.classList.remove('mermaid-pending')
       element.classList.add('zoomable-image')
       element.style.cursor = 'zoom-in'
       element.title = '点击放大查看'
       // 添加复制按钮
-      if (!element.querySelector('.mermaid-copy-btn')) {
-        element.style.position = 'relative'
-        const copyBtn = document.createElement('button')
-        copyBtn.className = 'mermaid-copy-btn image-copy-btn'
-        copyBtn.title = '复制图片'
-        copyBtn.innerHTML = COPY_ICON
-        copyBtn.addEventListener('click', async (e) => {
-          e.stopPropagation()
-          e.preventDefault()
-          try {
-            const svgEl = element.querySelector('svg')
-            if (!svgEl) return
-            // 克隆 SVG 并替换 foreignObject 为 text（避免 canvas tainted）
-            const blobPromise = svgToPngBlob(svgEl, 2)
-            const item = new ClipboardItem({ 'image/png': blobPromise })
-            await navigator.clipboard.write([item])
-            showCopyTip(copyBtn, true)
-          } catch (err) {
-            console.warn('复制Mermaid图表失败:', err)
-            showCopyTip(copyBtn, false)
-          }
-        })
-        element.appendChild(copyBtn)
-      }
+      element.style.position = 'relative'
+      const copyBtn = document.createElement('button')
+      copyBtn.className = 'mermaid-copy-btn image-copy-btn'
+      copyBtn.title = '复制图片'
+      copyBtn.innerHTML = COPY_ICON
+      copyBtn.addEventListener('click', async (e) => {
+        e.stopPropagation()
+        e.preventDefault()
+        try {
+          const svgEl = element.querySelector('svg')
+          if (!svgEl) return
+          const blobPromise = svgToPngBlob(svgEl, 2)
+          const item = new ClipboardItem({ 'image/png': blobPromise })
+          await navigator.clipboard.write([item])
+          showCopyTip(copyBtn, true)
+        } catch (err) {
+          console.warn('复制Mermaid图表失败:', err)
+          showCopyTip(copyBtn, false)
+        }
+      })
+      element.appendChild(copyBtn)
     } catch (error) {
       console.error('Mermaid 渲染失败:', error)
-      // 清理 Mermaid 渲染失败时残留在 DOM 中的错误容器
-      const errorEl = document.getElementById(element.id + '-svg')
+      const errorEl = document.getElementById(id + '-svg')
       if (errorEl) errorEl.remove()
+      element.classList.remove('mermaid-pending')
       element.innerHTML = `<pre class="mermaid-error">图表渲染失败\n${error.message}</pre>`
     }
-  }
+  })
+
+  await Promise.all(tasks)
 }
 
 // 为表格添加滚动容器和工具栏按钮
