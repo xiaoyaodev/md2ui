@@ -1,5 +1,11 @@
 # 发布到 npm 仓库
 
+常用命令：
+
+bash publish.sh patch
+
+
+
 ## 前置准备
 
 1. 注册 npm 账号：https://www.npmjs.com/signup
@@ -47,7 +53,7 @@ npm config set //registry.npmjs.org/:_authToken=你的token
 ### 4. 发布
 
 ```bash
-npm publish
+bash publish.sh patch
 ```
 
 ### 5. 清理 token 并切回淘宝镜像
